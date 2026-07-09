@@ -275,6 +275,13 @@ why it caused incorrect behavior, and how it was fixed.
   consistent.
 
 ---
+8.4 Cancellation race condition creates duplicate RefundLog entries
+File/function: routers/bookings.py — cancel_booking()
+Rule: #6 (Cancellation refund policy)
+Bug: cancel_booking() had no lock protection around the status check, refund calculation, and RefundLog creation. Two concurrent cancellation requests could both pass the status == "cancelled" check and create separate refund records.
+Impact: A single cancelled booking could have multiple RefundLog entries and duplicate refunds, violating the requirement that a cancelled booking has exactly one RefundLog entry and that concurrent cancellations are handled safely.
+Fix: Wrapped the cancellation process inside the existing _booking_lock, moving the booking status update, refund creation, and database commit inside the lock. This ensures only one cancellation request can process a booking at a time, while later requests receive 409 ALREADY_CANCELLED.
+
 
 Bug 24
 
@@ -292,3 +299,4 @@ Datetime values with offsets were stored with the wrong time. For example, 10:00
 
 How it was fixed:
 Replaced dt.replace(tzinfo=None) with dt.astimezone(timezone.utc).replace(tzinfo=None) so offset-aware datetimes are converted to UTC before storage.
+

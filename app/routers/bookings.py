@@ -203,53 +203,69 @@ def cancel_booking(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    booking = (
-        db.query(Booking)
-        .join(Room, Booking.room_id == Room.id)
-        .filter(Booking.id == booking_id, Room.org_id == user.org_id)
-        .first()
+    with _booking_lock:
+        booking = (
+            db.query(Booking)
+            .join(Room, Booking.room_id == Room.id)
+            .filter(Booking.id == booking_id, Room.org_id == user.org_id)
+            .first()
+        )
+
+        if booking is None:
+            raise AppError(404, "BOOKING_NOT_FOUND", "Booking not found")
+
+        if user.role != "admin" and booking.user_id != user.id:
+            raise AppError(404, "BOOKING_NOT_FOUND", "Booking not found")
+
+        if booking.status == "cancelled":
+            raise AppError(
+                409,
+                "ALREADY_CANCELLED",
+                "Booking already cancelled"
+            )
+
+        now = datetime.utcnow()
+        notice = booking.start_time - now
+
+        if notice >= timedelta(hours=48):
+            refund_percent = 100
+        elif notice >= timedelta(hours=24):
+            refund_percent = 50
+        else:
+            refund_percent = 0
+
+        refund_amount_cents = int(
+            Decimal(booking.price_cents * refund_percent / 100)
+            .quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP
+            )
+        )
+
+        booking.status = "cancelled"
+
+        log_refund(
+            db,
+            booking,
+            refund_amount_cents
+        )
+
+        db.commit()
+
+    stats.record_cancel(
+        booking.room_id,
+        booking.price_cents
     )
-    if booking is None:
-        raise AppError(404, "BOOKING_NOT_FOUND", "Booking not found")
-    if user.role != "admin" and booking.user_id != user.id:
-        raise AppError(404, "BOOKING_NOT_FOUND", "Booking not found")
 
-    if booking.status == "cancelled":
-        raise AppError(409, "ALREADY_CANCELLED", "Booking already cancelled")
-
-    now = datetime.utcnow()
-    notice = booking.start_time - now
-    notice_hours = int(notice.total_seconds() // 3600)
-    if notice_hours > 48:
-        refund_percent = 100
-    elif notice >= timedelta(hours=24):
-        refund_percent = 50
-    else:
-        refund_percent = 0
-
-    refund_amount_cents = int(
-        Decimal(booking.price_cents * refund_percent / 100)
-        .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-
-    log_refund(db, booking, refund_amount_cents)
-
-
-    _settlement_pause()
-    booking.status = "cancelled"
-    db.commit()
-
-    stats.record_cancel(booking.room_id, booking.price_cents)
     cache.invalidate_availability(
         booking.room_id,
         booking.start_time.date().isoformat(),
     )
 
     cache.invalidate_report(user.org_id)
+
     notifications.notify_cancelled(booking)
 
-    
-    
     return {
         "id": booking.id,
         "status": "cancelled",
