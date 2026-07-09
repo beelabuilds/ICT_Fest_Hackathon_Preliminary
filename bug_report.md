@@ -281,9 +281,9 @@ why it caused incorrect behavior, and how it was fixed.
   `_audit_lock`, matching `notify_created()`, so lock order is always
   consistent.
 
-## 7. Bookings — caching
+## 9. Bookings — caching
 
-### 7.1 Usage report cache not invalidated after booking creation
+### 9.1 Usage report cache not invalidated after booking creation
 - **File/function:** `bookings.py` — `create_booking()`
 - **Rule:** #12 (Usage report caching)
 - **Bug:** After creating a booking, the code invalidated only the room availability cache and did not clear the cached usage report.
