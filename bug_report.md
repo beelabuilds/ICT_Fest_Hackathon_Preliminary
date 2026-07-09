@@ -276,4 +276,19 @@ why it caused incorrect behavior, and how it was fixed.
 
 ---
 
+Bug 24
 
+File(s):
+app/timeutils.py (parse_input_datetime())
+
+README Rule:
+Business Rule 1 – Datetimes
+
+Bug:
+UTC offset datetimes were handled by removing the timezone information using dt.replace(tzinfo=None) instead of converting the datetime to UTC first.
+
+Why it caused incorrect behavior:
+Datetime values with offsets were stored with the wrong time. For example, 10:00+05:00 was stored as 10:00 instead of being converted to 05:00 UTC, causing incorrect booking conflicts, quota checks, availability, and reports.
+
+How it was fixed:
+Replaced dt.replace(tzinfo=None) with dt.astimezone(timezone.utc).replace(tzinfo=None) so offset-aware datetimes are converted to UTC before storage.
