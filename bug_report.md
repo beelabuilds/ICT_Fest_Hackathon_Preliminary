@@ -204,6 +204,13 @@ why it caused incorrect behavior, and how it was fixed.
   `log_refund(db, booking, amount_cents)`, which now just stores it instead
   of recomputing it.
 
+  ### 5.4 Availability cache not invalidated after cancellation
+- **File/function:** `bookings.py` — `cancel_booking()`
+- **Rule:** #13
+- **Bug:** After cancelling a booking, the code invalidated only the usage report cache and did not clear the room availability cache.
+- **Impact:** `GET /rooms/{id}/availability` could continue showing the cancelled booking as a busy time slot, so availability did not immediately reflect the current state.
+- **Fix:** Added `cache.invalidate_availability(booking.room_id, booking.start_time.date().isoformat())` after a successful cancellation to clear the affected room's availability cache immediately.
+
 ---
 
 ## 6. Rooms
@@ -274,6 +281,14 @@ why it caused incorrect behavior, and how it was fixed.
   `_audit_lock`, matching `notify_created()`, so lock order is always
   consistent.
 
+## 7. Bookings — caching
+
+### 7.1 Usage report cache not invalidated after booking creation
+- **File/function:** `bookings.py` — `create_booking()`
+- **Rule:** #12 (Usage report caching)
+- **Bug:** After creating a booking, the code invalidated only the room availability cache and did not clear the cached usage report.
+- **Impact:** `GET /admin/usage-report` could continue returning stale statistics that did not include the newly created booking until the cache expired.
+- **Fix:** Added `cache.invalidate_report(user.org_id)` after a successful booking creation so the next usage report is generated using the latest booking data.
 ---
 
 
