@@ -231,7 +231,7 @@ def cancel_booking(
         Decimal(booking.price_cents * refund_percent / 100)
         .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     )
-    
+
     log_refund(db, booking, refund_amount_cents)
 
 
@@ -240,6 +240,11 @@ def cancel_booking(
     db.commit()
 
     stats.record_cancel(booking.room_id, booking.price_cents)
+    cache.invalidate_availability(
+        booking.room_id,
+        booking.start_time.date().isoformat(),
+    )
+
     cache.invalidate_report(user.org_id)
     notifications.notify_cancelled(booking)
 
