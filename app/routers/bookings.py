@@ -17,6 +17,9 @@ from ..services.refunds import log_refund
 from ..timeutils import iso_utc, parse_input_datetime
 
 from decimal import Decimal, ROUND_HALF_UP
+import threading
+
+_booking_lock = threading.Lock()
 
 router = APIRouter(tags=["bookings"])
 
@@ -107,25 +110,27 @@ def create_booking(
     if room is None:
         raise AppError(404, "ROOM_NOT_FOUND", "Room not found")
 
-    if _has_conflict(db, room.id, start, end):
-        raise AppError(409, "ROOM_CONFLICT", "Room already booked for this interval")
+    with _booking_lock:
 
-    _check_quota(db, user.id, now, start)
+        if _has_conflict(db, room.id, start, end):
+            raise AppError(409, "ROOM_CONFLICT", "Room already booked for this interval")
 
-    price_cents = room.hourly_rate_cents * duration_hours
-    booking = Booking(
-        room_id=room.id,
-        user_id=user.id,
-        start_time=start,
-        end_time=end,
-        status="confirmed",
-        reference_code=reference.next_reference_code(),
-        price_cents=price_cents,
-        created_at=now,
-    )
-    db.add(booking)
-    db.commit()
-    db.refresh(booking)
+        _check_quota(db, user.id, now, start)
+
+        price_cents = room.hourly_rate_cents * duration_hours
+        booking = Booking(
+            room_id=room.id,
+            user_id=user.id,
+            start_time=start,
+            end_time=end,
+            status="confirmed",
+            reference_code=reference.next_reference_code(),
+            price_cents=price_cents,
+            created_at=now,
+        )
+        db.add(booking)
+        db.commit()
+        db.refresh(booking)
 
     stats.record_create(room.id, price_cents)
     cache.invalidate_availability(room.id, start.date().isoformat())
@@ -222,8 +227,11 @@ def cancel_booking(
     else:
         refund_percent = 0
 
-    refund_amount_cents = round(booking.price_cents * (refund_percent / 100.0))
-
+    refund_amount_cents = int(
+        Decimal(booking.price_cents * refund_percent / 100)
+        .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+    
     log_refund(db, booking, refund_amount_cents)
 
 
@@ -235,11 +243,8 @@ def cancel_booking(
     cache.invalidate_report(user.org_id)
     notifications.notify_cancelled(booking)
 
-    refund_amount_cents = int(
-    Decimal(booking.price_cents * refund_percent / 100)
-    .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-
+    
+    
     return {
         "id": booking.id,
         "status": "cancelled",
