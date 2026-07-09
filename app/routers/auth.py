@@ -35,6 +35,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
             org = db.query(Organization).filter(
             Organization.name == payload.org_name
             ).first()
+            role = "member"
 
     existing = (
         db.query(User)

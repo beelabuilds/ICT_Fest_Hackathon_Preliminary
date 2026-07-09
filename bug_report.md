@@ -59,7 +59,13 @@ why it caused incorrect behavior, and how it was fixed.
 - **Fix:** Wrap org creation in try/except `IntegrityError`; on conflict,
   roll back and re-fetch the now-existing org, then continue registration as
   a join.
-
+  
+### 1.6 Registration race could assign two admins
+- **File/function:** `routers/auth.py` — `register()`
+- **Rule:** #15 (Registration)
+- **Bug:** The user's role was determined before handling the organization creation race. If two users registered the same new organization simultaneously, the second request re-fetched the existing organization after an `IntegrityError` but still kept the role as `admin`.
+- **Impact:** Multiple users could become administrators of the same organization instead of only the first registrant.
+- **Fix:** Set `role = "member"` after re-fetching the existing organization in the `IntegrityError` handler, ensuring only the creator of the organization becomes an admin.
 ---
 
 ## 2. Bookings — validation
